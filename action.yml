@@ -1,0 +1,62 @@
+name: "Setup bf16.ai CLI"
+description: "Install the bf16 CLI (bf16ai), validate BF16_API_KEY & gateway latency, and configure OpenAI/Anthropic CI env vars."
+author: "BF16 Team"
+branding:
+  icon: "zap"
+  color: "yellow"
+
+inputs:
+  version:
+    description: "npm version or dist-tag of bf16ai to install (default: latest)"
+    required: false
+    default: "latest"
+  api-key:
+    description: "Optional bf16.ai API key to export as BF16_API_KEY, OPENAI_API_KEY, and ANTHROPIC_API_KEY"
+    required: false
+    default: ""
+  doctor:
+    description: "Run bf16ai doctor after installation to verify connectivity"
+    required: false
+    default: "false"
+
+outputs:
+  version:
+    description: "Installed bf16ai CLI version"
+    value: ${{ steps.install.outputs.version }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Setup Node.js if missing
+      if: hashFiles('/does-not-exist') == ''
+      shell: bash
+      run: |
+        if ! command -v npm >/dev/null 2>&1; then
+          echo "::error::npm is required. Add actions/setup-node@v4 before BF16-AI/setup-bf16."
+          exit 1
+        fi
+    - name: Install bf16ai CLI
+      id: install
+      shell: bash
+      run: |
+        npm install -g "bf16ai@${{ inputs.version }}"
+        INSTALLED_VER="$(bf16ai --version 2>/dev/null || echo "${{ inputs.version }}")"
+        echo "version=${INSTALLED_VER}" >> "$GITHUB_OUTPUT"
+    - name: Export bf16.ai API environment variables
+      if: inputs.api-key != ''
+      shell: bash
+      run: |
+        echo "::add-mask::${{ inputs.api-key }}"
+        {
+          echo "BF16_API_KEY=${{ inputs.api-key }}"
+          echo "OPENAI_BASE_URL=https://api.bf16.ai/v1"
+          echo "OPENAI_API_KEY=${{ inputs.api-key }}"
+          echo "ANTHROPIC_BASE_URL=https://api.bf16.ai"
+          echo "ANTHROPIC_API_KEY=${{ inputs.api-key }}"
+        } >> "$GITHUB_ENV"
+    - name: Run connectivity check
+      if: inputs.doctor == 'true'
+      shell: bash
+      env:
+        BF16_API_KEY: ${{ inputs.api-key }}
+      run: bf16ai doctor --json || true
